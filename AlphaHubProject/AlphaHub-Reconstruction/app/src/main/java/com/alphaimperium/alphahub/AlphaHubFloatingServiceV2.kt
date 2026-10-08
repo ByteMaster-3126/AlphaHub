@@ -53,6 +53,7 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
     private lateinit var params: WindowManager.LayoutParams
     private var composeView: ComposeView? = null
     private var hubViewModel: HubViewModel? = null
+    private var lifecycleStarted = false
     private val expandedState = mutableStateOf(false)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingCollapse: Runnable? = null
@@ -69,6 +70,7 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
 
             serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
             serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_START)
+            lifecycleStarted = true
 
             createNotificationChannel()
 
@@ -184,20 +186,23 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
 
             var downX = 0f
             var downY = 0f
+            var downAt = 0L
             val touchSlop = ViewConfiguration.get(this@AlphaHubFloatingServiceV2).scaledTouchSlop
+            val longPressMs = ViewConfiguration.getLongPressTimeout().toLong()
 
             setOnClickListener {
                 Log.d(TAG, "Native handle click -> expand")
                 expandLauncher()
             }
 
-            // Handle tap and swipe directly here so ACTION_DOWN/ACTION_UP cannot
-            // be lost between the TextView and the overlay WindowManager root.
+            // Keep the hit target itself as the direct WindowManager child.
+            // This avoids an extra container stealing or altering touch dispatch.
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downX = event.rawX
                         downY = event.rawY
+                        downAt = android.os.SystemClock.uptimeMillis()
                         Log.d(TAG, "Native handle touch DOWN x=$downX y=$downY")
                         true
                     }
@@ -205,17 +210,30 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                     MotionEvent.ACTION_UP -> {
                         val dx = event.rawX - downX
                         val dy = event.rawY - downY
+                        val duration = android.os.SystemClock.uptimeMillis() - downAt
                         val horizontalSwipe = kotlin.math.abs(dx) > touchSlop * 2 &&
                             kotlin.math.abs(dx) > kotlin.math.abs(dy)
 
-                        if (horizontalSwipe && dx > 0f) {
-                            Log.d(TAG, "Native handle swipe RIGHT -> expand")
-                            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                            expandLauncher()
-                        } else if (kotlin.math.abs(dx) <= touchSlop &&
-                            kotlin.math.abs(dy) <= touchSlop) {
-                            Log.d(TAG, "Native handle tap -> expand")
-                            view.performClick()
+                        when {
+                            duration >= longPressMs &&
+                                kotlin.math.abs(dx) <= touchSlop &&
+                                kotlin.math.abs(dy) <= touchSlop -> {
+                                Log.i(TAG, "Native handle long press -> stop service")
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                stopSelf()
+                            }
+
+                            horizontalSwipe && dx > 0f -> {
+                                Log.d(TAG, "Native handle swipe RIGHT -> expand")
+                                view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                expandLauncher()
+                            }
+
+                            kotlin.math.abs(dx) <= touchSlop &&
+                                kotlin.math.abs(dy) <= touchSlop -> {
+                                Log.d(TAG, "Native handle tap -> expand")
+                                view.performClick()
+                            }
                         }
                         true
                     }
@@ -226,15 +244,7 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
             }
         }
 
-        return FrameLayout(this).apply {
-            addView(
-                handle,
-                FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-            )
-        }
+        return handle
     }
 
     private fun expandLauncher() {
@@ -360,8 +370,11 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
             runCatching { windowManager.removeView(root) }
         }
 
-        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
-        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        if (lifecycleStarted) {
+            serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+            serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+            lifecycleStarted = false
+        }
 
         super.onDestroy()
     }
