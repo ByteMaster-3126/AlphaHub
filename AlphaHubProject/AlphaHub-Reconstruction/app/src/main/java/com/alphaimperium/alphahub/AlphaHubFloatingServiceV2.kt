@@ -68,6 +68,13 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
 
             createNotificationChannel()
 
+            val stopPendingIntent = PendingIntent.getService(
+                this,
+                1002,
+                Intent(this, AlphaHubFloatingServiceV2::class.java).setAction(ACTION_STOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
             val notification = android.app.Notification.Builder(
                 this,
                 "alpha_hub_launcher"
@@ -76,6 +83,13 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                 .setContentText("Floating launcher is active")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setOngoing(true)
+                .addAction(
+                    android.app.Notification.Action.Builder(
+                        null,
+                        "Stop Alpha Hub",
+                        stopPendingIntent
+                    ).build()
+                )
                 .build()
 
             if (Build.VERSION.SDK_INT >= 34) {
