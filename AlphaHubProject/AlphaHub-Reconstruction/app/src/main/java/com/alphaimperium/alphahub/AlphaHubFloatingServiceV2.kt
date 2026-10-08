@@ -2,6 +2,7 @@ package com.alphaimperium.alphahub
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -9,7 +10,9 @@ import android.graphics.Color as AndroidColor
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.os.Log
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -30,6 +33,11 @@ import com.alphaimperium.alphahub.ui.theme.AlphaHubTheme
  * launcher trigger on first startup.
  */
 class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
+
+    companion object {
+        private const val TAG = "AlphaHubFloating"
+        private const val ACTION_STOP = "com.alphaimperium.alphahub.STOP_FLOATING"
+    }
 
     private val serviceLifecycle = LifecycleRegistry(this)
     override val lifecycle: Lifecycle
@@ -99,9 +107,23 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
             root.addView(createNativeHandle())
             windowManager.addView(root, params)
         } catch (t: Throwable) {
-            // Never leave a half-created service silently running.
+            Log.e(TAG, "Floating launcher startup failed", t)
             stopSelf()
         }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            Log.i(TAG, "Stop requested from notification")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        Log.d(TAG, "Service start command received")
+        if (::root.isInitialized && root.childCount == 0 && !expandedState.value) {
+            runCatching { root.addView(createNativeHandle()) }
+                .onFailure { Log.e(TAG, "Could not restore native handle", it) }
+        }
+        return START_NOT_STICKY
     }
 
     private fun createNativeHandle(): View {
@@ -122,7 +144,26 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                 cornerRadius = 30f
                 setStroke(2, AndroidColor.rgb(91, 145, 255))
             }
-            setOnClickListener { expandLauncher() }
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                Log.d(TAG, "Native handle click")
+                expandLauncher()
+            }
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        Log.d(TAG, "Native handle touch DOWN")
+                        false
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        Log.d(TAG, "Native handle touch UP -> expand")
+                        performClick()
+                        true
+                    }
+                    else -> false
+                }
+            }
         }
 
         return FrameLayout(this).apply {
@@ -138,6 +179,7 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
 
     private fun expandLauncher() {
         if (expandedState.value) return
+        Log.i(TAG, "Expanding floating launcher")
         expandedState.value = true
 
         val dm = resources.displayMetrics
@@ -176,12 +218,13 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                 )
             )
         }.onFailure {
-            // If Compose fails, immediately restore the native handle.
+            Log.e(TAG, "Floating launcher Compose expansion failed", it)
             collapseLauncher()
         }
     }
 
     private fun collapseLauncher() {
+        Log.i(TAG, "Collapsing floating launcher")
         expandedState.value = false
 
         composeView?.let { view ->
@@ -198,6 +241,8 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
             windowManager.updateViewLayout(root, params)
             root.removeAllViews()
             root.addView(createNativeHandle())
+        }.onFailure {
+            Log.e(TAG, "Failed to restore native handle after collapse", it)
         }
     }
 
