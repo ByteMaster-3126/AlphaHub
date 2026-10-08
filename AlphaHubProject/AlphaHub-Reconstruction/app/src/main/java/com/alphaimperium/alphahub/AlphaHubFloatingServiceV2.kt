@@ -56,7 +56,7 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
             )
                 .setContentTitle("Alpha Hub")
                 .setContentText("Floating launcher is active")
-                .setSmallIcon(R.drawable.alpha_logo)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setOngoing(true)
                 .build()
 
