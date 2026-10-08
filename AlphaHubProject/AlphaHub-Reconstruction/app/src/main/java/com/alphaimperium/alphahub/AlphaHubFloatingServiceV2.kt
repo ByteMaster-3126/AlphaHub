@@ -10,7 +10,7 @@ import android.graphics.Color as AndroidColor
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
-import android.os.Log
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
