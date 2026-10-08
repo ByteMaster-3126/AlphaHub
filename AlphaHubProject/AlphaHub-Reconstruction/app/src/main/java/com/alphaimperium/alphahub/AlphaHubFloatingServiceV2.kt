@@ -9,7 +9,9 @@ import android.content.pm.ServiceInfo
 import android.graphics.Color as AndroidColor
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -52,6 +54,8 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
     private var composeView: ComposeView? = null
     private var hubViewModel: HubViewModel? = null
     private val expandedState = mutableStateOf(false)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var pendingCollapse: Runnable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -93,13 +97,19 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                 .build()
 
             if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(
+                androidx.core.app.ServiceCompat.startForeground(
+                    this,
                     1002,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 )
             } else {
-                startForeground(1002, notification)
+                androidx.core.app.ServiceCompat.startForeground(
+                    this,
+                    1002,
+                    notification,
+                    0
+                )
             }
 
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -117,8 +127,8 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                     WindowManager.LayoutParams.TYPE_PHONE
                 },
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 android.graphics.PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
@@ -229,6 +239,8 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
 
     private fun expandLauncher() {
         if (expandedState.value) return
+        pendingCollapse?.let(mainHandler::removeCallbacks)
+        pendingCollapse = null
         Log.i(TAG, "Expanding floating launcher")
         expandedState.value = true
 
@@ -240,32 +252,35 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
         runCatching {
             windowManager.updateViewLayout(root, params)
 
-            // Remove the native handle and create Compose only now.
-            root.removeAllViews()
-
+            // Build Compose before removing the working native handle.
+            // If ViewModel/Compose setup fails, the native trigger remains usable.
             val view = ComposeView(this)
             view.setViewTreeLifecycleOwner(this)
-            composeView = view
 
-            // Construct the ViewModel before Compose starts. This keeps constructor
-            // failures inside the service's defensive try/catch instead of crashing
-            // asynchronously during composition.
+            // Construct the ViewModel before Compose starts so constructor failures
+            // stay inside this defensive try/catch.
             val model = HubViewModel(application)
-            hubViewModel = model
 
             view.setContent {
                 AlphaHubTheme {
                     FloatingLauncherOverlay(
                         vm = model,
-                        expanded = true,
+                        expanded = expandedState.value,
                         onToggle = { open ->
-                            if (open) expandedState.value = true
-                            else collapseLauncher()
+                            if (open) {
+                                expandLauncher()
+                            } else {
+                                requestCollapse()
+                            }
                         }
                     )
                 }
             }
 
+            composeView = view
+            hubViewModel = model
+
+            root.removeAllViews()
             root.addView(
                 view,
                 FrameLayout.LayoutParams(
@@ -273,14 +288,33 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                     FrameLayout.LayoutParams.MATCH_PARENT
                 )
             )
+            Log.i(TAG, "Floating launcher Compose view installed")
         }.onFailure {
             Log.e(TAG, "Floating launcher Compose expansion failed", it)
-            collapseLauncher()
+            collapseLauncherImmediately()
         }
     }
 
-    private fun collapseLauncher() {
+    private fun requestCollapse() {
+        if (!expandedState.value) return
+        Log.i(TAG, "Collapse requested; playing exit animation")
+        expandedState.value = false
+        pendingCollapse?.let(mainHandler::removeCallbacks)
+
+        val runnable = Runnable {
+            pendingCollapse = null
+            if (!expandedState.value) {
+                collapseLauncherImmediately()
+            }
+        }
+        pendingCollapse = runnable
+        mainHandler.postDelayed(runnable, 340L)
+    }
+
+    private fun collapseLauncherImmediately() {
         Log.i(TAG, "Collapsing floating launcher")
+        pendingCollapse?.let(mainHandler::removeCallbacks)
+        pendingCollapse = null
         expandedState.value = false
 
         composeView?.let { view ->
@@ -319,6 +353,8 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
     }
 
     override fun onDestroy() {
+        pendingCollapse?.let(mainHandler::removeCallbacks)
+        pendingCollapse = null
         composeView?.let { runCatching { root.removeView(it) } }
         if (::root.isInitialized) {
             runCatching { windowManager.removeView(root) }
