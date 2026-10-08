@@ -1,17 +1,10 @@
 package com.alphaimperium.alphahub
 
-import android.app.Activity
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
-import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.IBinder
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.input.pointer.pointerInput
 import android.content.Context
 import android.content.Intent
@@ -23,8 +16,6 @@ import android.util.Log
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.view.ViewGroup
-import android.view.Gravity
-import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -165,9 +156,6 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.alphaimperium.alphahub.ui.theme.AlphaHubTheme
 
@@ -1082,105 +1070,6 @@ private fun rememberImageBitmap(uriString: String?): ImageBitmap? {
 
 private fun BorderBrush(): Brush = Brush.linearGradient(listOf(Blue, Purple))
 
-
-class AlphaHubFloatingService : Service(), LifecycleOwner {
-    private val serviceLifecycle = LifecycleRegistry(this)
-    override val lifecycle: Lifecycle get() = serviceLifecycle
-    private lateinit var windowManager: WindowManager
-    private lateinit var composeView: ComposeView
-    private lateinit var params: WindowManager.LayoutParams
-    private val vm by lazy { HubViewModel(application) }
-    private var expandedState = androidx.compose.runtime.mutableStateOf(false)
-
-    override fun onCreate() {
-        super.onCreate()
-        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_START)
-        createNotificationChannel()
-        val notification = android.app.Notification.Builder(this, "alpha_hub_launcher")
-            .setContentTitle("Alpha Hub")
-            .setContentText("Floating launcher is active")
-            .setSmallIcon(R.drawable.alpha_logo)
-            .setOngoing(true)
-            .build()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(1001, notification)
-        }
-
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        val dm = resources.displayMetrics
-        val railWidth = (82 * dm.density).toInt()
-        val railHeight = (164 * dm.density).toInt()
-        params = WindowManager.LayoutParams(
-            railWidth,
-            railHeight,
-            if (Build.VERSION.SDK_INT >= 26)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            android.graphics.PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            x = 0
-            y = 0
-        }
-
-        composeView = ComposeView(this)
-        composeView.setViewTreeLifecycleOwner(this)
-        composeView.setContent {
-            AlphaHubTheme {
-                val expanded = expandedState.value
-                LaunchedEffect(expanded) {
-                    updateWindowWidth(expanded)
-                }
-                FloatingLauncherOverlay(
-                    vm = vm,
-                    expanded = expanded,
-                    onToggle = { expandedState.value = it }
-                )
-            }
-        }
-        windowManager.addView(composeView, params)
-    }
-
-    private fun updateWindowWidth(expanded: Boolean) {
-        if (!::composeView.isInitialized) return
-        val dm = resources.displayMetrics
-        val width = if (expanded) (dm.widthPixels * 0.94f).toInt() else (82 * dm.density).toInt()
-        val height = if (expanded) WindowManager.LayoutParams.MATCH_PARENT else (164 * dm.density).toInt()
-        params.width = width
-        params.height = height
-        params.gravity = Gravity.START or Gravity.CENTER_VERTICAL
-        runCatching { windowManager.updateViewLayout(composeView, params) }
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    "alpha_hub_launcher",
-                    "Alpha Hub Floating Launcher",
-                    NotificationManager.IMPORTANCE_LOW
-                )
-            )
-        }
-    }
-
-    override fun onDestroy() {
-        if (::composeView.isInitialized) runCatching { windowManager.removeView(composeView) }
-        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
-        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-}
 
 @Composable
 private fun AlphaHubAppContent(vm: HubViewModel) {
