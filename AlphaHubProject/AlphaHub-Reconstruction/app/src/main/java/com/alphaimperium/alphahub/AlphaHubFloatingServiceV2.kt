@@ -12,8 +12,10 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.provider.Settings
 import android.widget.FrameLayout
@@ -48,6 +50,7 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
     private lateinit var root: FrameLayout
     private lateinit var params: WindowManager.LayoutParams
     private var composeView: ComposeView? = null
+    private var hubViewModel: HubViewModel? = null
     private val expandedState = mutableStateOf(false)
 
     override fun onCreate() {
@@ -151,24 +154,50 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
                 cornerRadius = 30f
                 setStroke(2, AndroidColor.rgb(91, 145, 255))
             }
+
             isClickable = true
             isFocusable = true
+
+            var downX = 0f
+            var downY = 0f
+            val touchSlop = ViewConfiguration.get(this@AlphaHubFloatingServiceV2).scaledTouchSlop
+
             setOnClickListener {
-                Log.d(TAG, "Native handle click")
+                Log.d(TAG, "Native handle click -> expand")
                 expandLauncher()
             }
-            setOnTouchListener { _, event ->
+
+            // Handle tap and swipe directly here so ACTION_DOWN/ACTION_UP cannot
+            // be lost between the TextView and the overlay WindowManager root.
+            setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
-                        Log.d(TAG, "Native handle touch DOWN")
-                        false
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        Log.d(TAG, "Native handle touch UP -> expand")
-                        performClick()
+                        downX = event.rawX
+                        downY = event.rawY
+                        Log.d(TAG, "Native handle touch DOWN x=$downX y=$downY")
                         true
                     }
-                    else -> false
+
+                    MotionEvent.ACTION_UP -> {
+                        val dx = event.rawX - downX
+                        val dy = event.rawY - downY
+                        val horizontalSwipe = kotlin.math.abs(dx) > touchSlop * 2 &&
+                            kotlin.math.abs(dx) > kotlin.math.abs(dy)
+
+                        if (horizontalSwipe && dx > 0f) {
+                            Log.d(TAG, "Native handle swipe RIGHT -> expand")
+                            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                            expandLauncher()
+                        } else if (kotlin.math.abs(dx) <= touchSlop &&
+                            kotlin.math.abs(dy) <= touchSlop) {
+                            Log.d(TAG, "Native handle tap -> expand")
+                            view.performClick()
+                        }
+                        true
+                    }
+
+                    MotionEvent.ACTION_CANCEL -> true
+                    else -> true
                 }
             }
         }
@@ -204,10 +233,16 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
             view.setViewTreeLifecycleOwner(this)
             composeView = view
 
+            // Construct the ViewModel before Compose starts. This keeps constructor
+            // failures inside the service's defensive try/catch instead of crashing
+            // asynchronously during composition.
+            val model = HubViewModel(application)
+            hubViewModel = model
+
             view.setContent {
                 AlphaHubTheme {
                     FloatingLauncherOverlay(
-                        vm = HubViewModel(application),
+                        vm = model,
                         expanded = true,
                         onToggle = { open ->
                             if (open) expandedState.value = true
@@ -238,6 +273,7 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
             runCatching { root.removeView(view) }
         }
         composeView = null
+        hubViewModel = null
 
         val dm = resources.displayMetrics
         params.width = (82 * dm.density).toInt()
