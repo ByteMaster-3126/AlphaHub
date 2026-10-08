@@ -596,7 +596,8 @@ private fun RecentWebStrip(webs: List<RecentWebsite>, vm: HubViewModel) {
     }
 }
 
-@Composableprivate fun ViewAllButton(onClick: () -> Unit) {
+@Composable
+private fun ViewAllButton(onClick: () -> Unit) {
     OutlinedButton(onClick = onClick, border = BorderStroke(1.dp, Color(0xFF2559A7)), modifier = Modifier.padding(top = 8.dp)) { Text("View all", color = Cyan) }
 }
 
@@ -895,7 +896,8 @@ private fun MoreFeaturesScreen(vm: HubViewModel, onBackground: () -> Unit, onSet
 @Composable
 private fun BackgroundScreen(vm: HubViewModel, onBack: () -> Unit) {
     var selected by remember(vm.backgroundUri) { mutableStateOf(vm.backgroundUri) }
-    var animation by remember { mutableStateOf(vm.backgroundAnimation) }    var speed by remember { mutableStateOf(vm.backgroundSpeed.toFloat()) }
+    var animation by remember { mutableStateOf(vm.backgroundAnimation) }
+    var speed by remember { mutableStateOf(vm.backgroundSpeed.toFloat()) }
     var brightness by remember { mutableStateOf(vm.backgroundBrightness.toFloat()) }
     val localPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> selected = uri?.toString() }
 
