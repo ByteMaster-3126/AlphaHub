@@ -1194,7 +1194,8 @@ private fun AlphaHubAppContent(vm: HubViewModel) {
     }
 }
 
-@Composableprivate fun FloatingLauncherOverlay(
+@Composable
+internal fun FloatingLauncherOverlay(
     vm: HubViewModel,
     expanded: Boolean,
     onToggle: (Boolean) -> Unit
@@ -1292,3 +1293,4 @@ private fun FloatingRail(vm: HubViewModel, expanded: Boolean, onToggle: (Boolean
         }
     }
 }
+
