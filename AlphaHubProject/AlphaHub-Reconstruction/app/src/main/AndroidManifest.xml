@@ -19,7 +19,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.AlphaHub">
         <service
-            android:name=".AlphaHubFloatingService"
+            android:name=".AlphaHubFloatingServiceV2"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
