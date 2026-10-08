@@ -25,7 +25,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     var customSections by mutableStateOf(loadSections()); private set
     var quickLaunch by mutableStateOf(loadQuickLaunch()); private set
     var favoriteAppPackages by mutableStateOf(loadStringList("favorite_apps")); private set
-    var phoneSettings by mutableStateOf(loadPhoneSettings()); private set
+    var phoneSettings by mutableStateOf(emptyList<PhoneSettingShortcut>()); private set
     var railSlots by mutableStateOf(loadRailSlots()); private set
     var backgroundUri by mutableStateOf(prefs.getString("background_uri",null)); private set
     var backgroundType by mutableStateOf(prefs.getString("background_type","image")?:"image"); private set
@@ -53,6 +53,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     var railEnabled by mutableStateOf(prefs.getBoolean("rail_enabled",true)); private set
     var railEditMode by mutableStateOf(false); private set
 
+    // Must be initialized before phoneSettings because loadPhoneSettings() uses this list.
     val availablePhoneSettings=listOf(
         PhoneSettingShortcut("wifi","Wi-Fi","wifi",Settings.ACTION_WIFI_SETTINGS),
         PhoneSettingShortcut("bluetooth","Bluetooth","bluetooth",Settings.ACTION_BLUETOOTH_SETTINGS),
@@ -70,7 +71,10 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         PhoneSettingShortcut("accessibility","Accessibility","accessibility",Settings.ACTION_ACCESSIBILITY_SETTINGS)
     )
 
-    init{refreshApps()}
+    init {
+        phoneSettings = loadPhoneSettings()
+        refreshApps()
+    }
     fun refreshApps(){
         val intent=Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         apps=pm.queryIntentActivities(intent,PackageManager.MATCH_ALL).mapNotNull{
