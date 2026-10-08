@@ -196,7 +196,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!overlayRequested && Settings.canDrawOverlays(this)) launchFloatingLauncher()
+        // Returning from the overlay-permission screen must start the launcher.
+        // launchStarted prevents duplicate starts.
+        if (Settings.canDrawOverlays(this)) launchFloatingLauncher()
     }
 
     private fun requestOverlayPermission() {
@@ -204,6 +206,10 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, "Enable Alpha Hub display-over-other-apps permission", Toast.LENGTH_LONG).show()
         runCatching {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        }.onFailure {
+            overlayRequested = false
+            Log.e("AlphaHubLauncher", "Could not open overlay permission settings", it)
+            Toast.makeText(this, "Please enable Alpha Hub overlay permission in Settings", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -213,8 +219,13 @@ class MainActivity : ComponentActivity() {
         runCatching {
             val intent = Intent(this, AlphaHubFloatingServiceV2::class.java)
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+        }.onSuccess {
+            finish()
+        }.onFailure {
+            launchStarted = false
+            Log.e("AlphaHubLauncher", "Could not start floating launcher service", it)
+            Toast.makeText(this, "Alpha Hub could not start the floating launcher", Toast.LENGTH_LONG).show()
         }
-        finish()
     }
 }
 
