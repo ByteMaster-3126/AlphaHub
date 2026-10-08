@@ -19,6 +19,7 @@ import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.view.ViewGroup
@@ -181,6 +182,7 @@ private val Muted = Color(0xFF9EB0D3)
 
 class MainActivity : ComponentActivity() {
     private var overlayRequested = false
+    private var launchStarted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -206,6 +208,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun launchFloatingLauncher() {
+        if (launchStarted) return
+        launchStarted = true
         runCatching {
             val intent = Intent(this, AlphaHubFloatingServiceV2::class.java)
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
@@ -1248,7 +1252,8 @@ internal fun FloatingLauncherOverlay(
 private fun FloatingRail(vm: HubViewModel, expanded: Boolean, onToggle: (Boolean) -> Unit) {
     Surface(
         Modifier
-            .fillMaxSize()
+            .width(82.dp)
+            .fillMaxHeight()
             .padding(start = 6.dp, end = 2.dp)
             .pointerInput(expanded) {
                 detectHorizontalDragGestures { _, dragAmount ->
