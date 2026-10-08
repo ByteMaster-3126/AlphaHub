@@ -1171,6 +1171,33 @@ class AlphaHubFloatingService : Service(), LifecycleOwner {
 }
 
 @Composable
+private fun AlphaHubAppContent(vm: HubViewModel) {
+    var screen by remember { mutableStateOf(HubScreen.HOME) }
+    var search by remember { mutableStateOf("") }
+    Column(Modifier.fillMaxSize()) {
+        HomeHeader(vm, { screen = HubScreen.SETTINGS }, { screen = HubScreen.TOOLS })
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            AnimatedContent(targetState = screen, label = "floating-page") { current ->
+                when (current) {
+                    HubScreen.HOME -> HomeScreen(vm, search, { search = it }, { screen = it }, {}, showRail = false)
+                    HubScreen.TOOLS -> ToolsScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.ADD_TOOL }, { screen = HubScreen.MORE_FEATURES })
+                    HubScreen.APPS -> InstalledAppsScreen(vm, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
+                    HubScreen.SHORTCUTS -> ShortcutsScreen(vm, { screen = HubScreen.CUSTOM_SHORTCUT }, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
+                    HubScreen.INSTALLED_APPS -> InstalledAppsScreen(vm, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
+                    HubScreen.ADD_TOOL -> AddToolScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.CUSTOM_SHORTCUT })
+                    HubScreen.CUSTOM_SHORTCUT -> CustomShortcutScreen(vm, { screen = HubScreen.SHORTCUTS })
+                    HubScreen.QUICK_LAUNCH -> QuickLaunchScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.CUSTOM_SHORTCUT })
+                    HubScreen.MORE_FEATURES -> MoreFeaturesScreen(vm, { screen = HubScreen.BACKGROUND }, { screen = HubScreen.SETTINGS })
+                    HubScreen.BACKGROUND -> BackgroundScreen(vm, { screen = HubScreen.MORE_FEATURES })
+                    HubScreen.SETTINGS -> SettingsScreen(vm, { screen = HubScreen.HOME })
+                }
+            }
+        }
+        BottomNavigation(screen) { screen = it }
+    }
+}
+
+@Composable
 private fun FloatingLauncherOverlay(
     vm: HubViewModel,
     expanded: Boolean,
