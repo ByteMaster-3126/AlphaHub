@@ -261,7 +261,7 @@ private fun AlphaHubApp(
                             HubScreen.QUICK_LAUNCH -> QuickLaunchScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.CUSTOM_SHORTCUT })
                             HubScreen.MORE_FEATURES -> MoreFeaturesScreen(vm, { screen = HubScreen.BACKGROUND }, { screen = HubScreen.SETTINGS })
                             HubScreen.BACKGROUND -> BackgroundScreen(vm, { screen = HubScreen.MORE_FEATURES })
-                            HubScreen.SETTINGS -> SettingsScreen(vm, { screen = HubScreen.HOME })
+                            HubScreen.SETTINGS -> SettingsScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.BACKGROUND })
                         }
                     }
                 }
@@ -952,7 +952,7 @@ private fun BackgroundScreen(vm: HubViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SettingsScreen(vm: HubViewModel, onBack: () -> Unit) {
+private fun SettingsScreen(vm: HubViewModel, onBack: () -> Unit, onBackground: () -> Unit) {
     val context = LocalContext.current
     Column(Modifier.fillMaxSize()) {
         PageHeader("Settings", "Alpha Hub preferences", onBack)
@@ -967,9 +967,7 @@ private fun SettingsScreen(vm: HubViewModel, onBack: () -> Unit) {
             item { SettingsSwitch("Recent Apps & Websites", "Keep separate recent sections on Home", vm.recentsEnabled, vm::setRecents) }
             item { SettingsSwitch("Floating Badge", "Allow a floating quick-launch trigger", vm.bubbleEnabled, vm::setBubble) }
             item {
-                ActionSettingsRow("Neo Animated Background", "Pick an image from Downloads or Gallery", Icons.Default.Image) {
-                    context.startActivity(Intent(context, MainActivity::class.java))
-                }
+                ActionSettingsRow("Neo Animated Background", "Pick an image from Downloads or Gallery", Icons.Default.Image, onBackground)
             }
             item {
                 ActionSettingsRow("Overlay permission", "Required only for future floating features", Icons.Default.VerifiedUser) {
@@ -1203,7 +1201,7 @@ private fun AlphaHubAppContent(vm: HubViewModel) {
                     HubScreen.QUICK_LAUNCH -> QuickLaunchScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.CUSTOM_SHORTCUT })
                     HubScreen.MORE_FEATURES -> MoreFeaturesScreen(vm, { screen = HubScreen.BACKGROUND }, { screen = HubScreen.SETTINGS })
                     HubScreen.BACKGROUND -> BackgroundScreen(vm, { screen = HubScreen.MORE_FEATURES })
-                    HubScreen.SETTINGS -> SettingsScreen(vm, { screen = HubScreen.HOME })
+                    HubScreen.SETTINGS -> SettingsScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.BACKGROUND })
                 }
             }
         }
