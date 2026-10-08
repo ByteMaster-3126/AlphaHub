@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.input.pointer.pointerInput
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -43,6 +44,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -161,6 +163,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.alphaimperium.alphahub.ui.theme.AlphaHubTheme
 
@@ -1065,7 +1071,9 @@ private fun rememberImageBitmap(uriString: String?): ImageBitmap? {
 private fun BorderBrush(): Brush = Brush.linearGradient(listOf(Blue, Purple))
 
 
-class AlphaHubFloatingService : Service() {
+class AlphaHubFloatingService : Service(), LifecycleOwner {
+    private val serviceLifecycle = LifecycleRegistry(this)
+    override val lifecycle: Lifecycle get() = serviceLifecycle
     private lateinit var windowManager: WindowManager
     private lateinit var composeView: ComposeView
     private lateinit var params: WindowManager.LayoutParams
@@ -1074,6 +1082,8 @@ class AlphaHubFloatingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
+        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_START)
         createNotificationChannel()
         val notification = android.app.Notification.Builder(this, "alpha_hub_launcher")
             .setContentTitle("Alpha Hub")
@@ -1090,9 +1100,10 @@ class AlphaHubFloatingService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         val dm = resources.displayMetrics
         val railWidth = (82 * dm.density).toInt()
+        val railHeight = (164 * dm.density).toInt()
         params = WindowManager.LayoutParams(
             railWidth,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            railHeight,
             if (Build.VERSION.SDK_INT >= 26)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else
@@ -1102,12 +1113,13 @@ class AlphaHubFloatingService : Service() {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.START or Gravity.TOP
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
             x = 0
             y = 0
         }
 
         composeView = ComposeView(this)
+        composeView.setViewTreeLifecycleOwner(this)
         composeView.setContent {
             AlphaHubTheme {
                 val expanded = expandedState.value
@@ -1128,7 +1140,10 @@ class AlphaHubFloatingService : Service() {
         if (!::composeView.isInitialized) return
         val dm = resources.displayMetrics
         val width = if (expanded) (dm.widthPixels * 0.94f).toInt() else (82 * dm.density).toInt()
+        val height = if (expanded) WindowManager.LayoutParams.MATCH_PARENT else (164 * dm.density).toInt()
         params.width = width
+        params.height = height
+        params.gravity = Gravity.START or Gravity.CENTER_VERTICAL
         runCatching { windowManager.updateViewLayout(composeView, params) }
     }
 
@@ -1147,6 +1162,8 @@ class AlphaHubFloatingService : Service() {
 
     override fun onDestroy() {
         if (::composeView.isInitialized) runCatching { windowManager.removeView(composeView) }
+        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         super.onDestroy()
     }
 
@@ -1160,11 +1177,7 @@ private fun FloatingLauncherOverlay(
     onToggle: (Boolean) -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn(tween(320)),
-            exit = fadeOut(tween(280))
-        ) {
+        if (expanded) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -1173,63 +1186,35 @@ private fun FloatingLauncherOverlay(
             )
         }
 
-        Row(
-            Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             FloatingRail(vm, expanded, onToggle)
-            AnimatedVisibility(
-                visible = expanded,
-                enter = slideInHorizontally(
-                    initialOffsetX = { -it },
-                    animationSpec = tween(380, easing = FastOutSlowInEasing)
-                ) + fadeIn(tween(380)),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { -it },
-                    animationSpec = tween(300, easing = FastOutSlowInEasing)
-                ) + fadeOut(tween(300))
-            ) {
-                Surface(
-                    Modifier
-                        .fillMaxHeight(0.82f)
-                        .fillMaxWidth()
-                        .padding(start = 6.dp, end = 8.dp),
-                    shape = RoundedCornerShape(26.dp),
-                    color = Color(0xCC101217),
-                    border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFF4E8CFF), Color(0xFF7D42FF)))),
-                    shadowElevation = 18.dp
+            if (expanded) {
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInHorizontally(
+                        initialOffsetX = { -it },
+                        animationSpec = tween(380, easing = FastOutSlowInEasing)
+                    ) + fadeIn(tween(380)),
+                    exit = slideOutHorizontally(
+                        targetOffsetX = { -it },
+                        animationSpec = tween(300, easing = FastOutSlowInEasing)
+                    ) + fadeOut(tween(300))
                 ) {
-                    AlphaHubAppContent(vm)
+                    Surface(
+                        Modifier
+                            .fillMaxHeight(0.82f)
+                            .fillMaxWidth()
+                            .padding(start = 6.dp, end = 8.dp),
+                        shape = RoundedCornerShape(26.dp),
+                        color = Color(0xCC101217),
+                        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFF4E8CFF), Color(0xFF7D42FF)))),
+                        shadowElevation = 18.dp
+                    ) {
+                        AlphaHubAppContent(vm)
+                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AlphaHubAppContent(vm: HubViewModel) {
-    var screen by remember { mutableStateOf(HubScreen.HOME) }
-    var search by remember { mutableStateOf("") }
-    Column(Modifier.fillMaxSize()) {
-        HomeHeader(vm, { screen = HubScreen.SETTINGS }, { screen = HubScreen.TOOLS })
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            AnimatedContent(targetState = screen, label = "floating-page") { current ->
-                when (current) {
-                    HubScreen.HOME -> HomeScreen(vm, search, { search = it }, { screen = it }, {}, showRail = false)
-                    HubScreen.TOOLS -> ToolsScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.ADD_TOOL }, { screen = HubScreen.MORE_FEATURES })
-                    HubScreen.APPS -> InstalledAppsScreen(vm, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
-                    HubScreen.SHORTCUTS -> ShortcutsScreen(vm, { screen = HubScreen.CUSTOM_SHORTCUT }, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
-                    HubScreen.INSTALLED_APPS -> InstalledAppsScreen(vm, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
-                    HubScreen.ADD_TOOL -> AddToolScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.CUSTOM_SHORTCUT })
-                    HubScreen.CUSTOM_SHORTCUT -> CustomShortcutScreen(vm, { screen = HubScreen.SHORTCUTS })
-                    HubScreen.QUICK_LAUNCH -> QuickLaunchScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.CUSTOM_SHORTCUT })
-                    HubScreen.MORE_FEATURES -> MoreFeaturesScreen(vm, { screen = HubScreen.BACKGROUND }, { screen = HubScreen.SETTINGS })
-                    HubScreen.BACKGROUND -> BackgroundScreen(vm, { screen = HubScreen.MORE_FEATURES })
-                    HubScreen.SETTINGS -> SettingsScreen(vm, { screen = HubScreen.HOME })
-                }
-            }
-        }
-        BottomNavigation(screen) { screen = it }
     }
 }
 
@@ -1237,40 +1222,48 @@ private fun AlphaHubAppContent(vm: HubViewModel) {
 private fun FloatingRail(vm: HubViewModel, expanded: Boolean, onToggle: (Boolean) -> Unit) {
     Surface(
         Modifier
-            .fillMaxHeight(0.72f)
-            .width(74.dp)
-            .clickable { onToggle(!expanded) }
-            .padding(start = 6.dp, end = 2.dp),
+            .fillMaxSize()
+            .padding(start = 6.dp, end = 2.dp)
+            .pointerInput(expanded) {
+                detectHorizontalDragGestures { _, dragAmount ->
+                    if (!expanded && dragAmount > 12f) onToggle(true)
+                    if (expanded && dragAmount < -12f) onToggle(false)
+                }
+            }
+            .clickable { onToggle(!expanded) },
         shape = RoundedCornerShape(22.dp),
-        color = Color(0xD9151A22),
+        color = Color(0xE6151A22),
         border = BorderStroke(1.dp, Color(0xFFB8C7D9)),
         shadowElevation = 14.dp
     ) {
-        Column(
-            Modifier.fillMaxSize().padding(vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Surface(Modifier.size(48.dp), CircleShape, color = Color(0xCC10315A), border = BorderStroke(1.dp, Cyan)) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Translate, null, tint = Cyan, modifier = Modifier.size(27.dp))
-                }
-            }
-            repeat(5) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Surface(
-                    Modifier.size(48.dp),
-                    RoundedCornerShape(14.dp),
-                    color = Color(0x991B2B43),
-                    border = BorderStroke(1.dp, Color(0xFF254C7C))
-                ) {}
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Edit, null, tint = Color(0xFFD7E5FF), modifier = Modifier.size(28.dp))
-                Text("Edit", color = Color(0xFFD7E5FF), fontSize = 10.sp)
-            }
-            Surface(Modifier.size(48.dp), CircleShape, color = Color(0xCC143256), border = BorderStroke(1.dp, Color(0xFF4774A8))) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(if (expanded) Icons.Default.ArrowBack else Icons.Default.ArrowForward, null, tint = Color.White)
+                    Modifier.width(54.dp).height(92.dp),
+                    RoundedCornerShape(18.dp),
+                    color = Color(0xCC10315A),
+                    border = BorderStroke(1.dp, Brush.linearGradient(listOf(Cyan, Purple)))
+                ) {
+                    Column(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Icon(Icons.Default.Translate, null, tint = Cyan, modifier = Modifier.size(25.dp))
+                        Box(Modifier.width(30.dp).height(2.dp).background(Color(0xFF6B8BC0)))
+                        Icon(
+                            if (expanded) Icons.Default.ArrowBack else Icons.Default.ArrowForward,
+                            null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                if (!expanded) {
+                    Text("Alpha", color = Color(0xFFD7E5FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
