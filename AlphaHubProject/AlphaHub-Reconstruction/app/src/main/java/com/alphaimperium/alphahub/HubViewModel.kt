@@ -113,20 +113,20 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun setOpacity(v:Int){panelOpacity=v.coerceIn(60,100);prefs.edit().putInt("panel_opacity",panelOpacity).apply()}
     fun setRecents(v:Boolean){recentsEnabled=v;prefs.edit().putBoolean("recents_enabled",v).apply()}
     fun setBubble(v:Boolean){bubbleEnabled=v;prefs.edit().putBoolean("bubble_enabled",v).apply()}
-    fun setLogoAnimation(v:Boolean){logoAnimation=v;prefs.edit().putBoolean("logo_animation",v).apply()}
-    fun setTitleGlow(v:Boolean){titleGlow=v;prefs.edit().putBoolean("title_glow",v).apply()}
-    fun setGlass(v:Boolean){glassEnabled=v;prefs.edit().putBoolean("glass_enabled",v).apply()}
-    fun setBlur(v:Boolean){blurEnabled=v;prefs.edit().putBoolean("blur_enabled",v).apply()}
-    fun setNeonBorder(v:Boolean){neonBorderEnabled=v;prefs.edit().putBoolean("neon_border",v).apply()}
-    fun setSubtitleEnabled(v:Boolean){subtitleEnabled=v;prefs.edit().putBoolean("subtitle_enabled",v).apply()}
-    fun setSubtitleText(v:String){subtitleText=v;prefs.edit().putString("subtitle_text",v).apply()}
-    fun setTitleText(v:String){titleText=v;prefs.edit().putString("title_text",v).apply()}
-    fun setLogoUri(v:String?){logoUri=v;prefs.edit().putString("logo_uri",v).apply()}
-    fun setTitleSize(v:Int){titleSize=v.coerceIn(20,40);prefs.edit().putInt("title_size",titleSize).apply()}
-    fun setTitleColorHex(v:String){titleColorHex=v;prefs.edit().putString("title_color",v).apply()}
-    fun setVoiceSearch(v:Boolean){voiceSearchEnabled=v;prefs.edit().putBoolean("voice_search",v).apply()}
-    fun setSearchHistory(v:Boolean){searchHistoryEnabled=v;prefs.edit().putBoolean("search_history",v).apply()}
-    fun setRailEnabled(v:Boolean){railEnabled=v;prefs.edit().putBoolean("rail_enabled",v).apply()}
+    fun updateLogoAnimation(v:Boolean){logoAnimation=v;prefs.edit().putBoolean("logo_animation",v).apply()}
+    fun updateTitleGlow(v:Boolean){titleGlow=v;prefs.edit().putBoolean("title_glow",v).apply()}
+    fun updateGlass(v:Boolean){glassEnabled=v;prefs.edit().putBoolean("glass_enabled",v).apply()}
+    fun updateBlur(v:Boolean){blurEnabled=v;prefs.edit().putBoolean("blur_enabled",v).apply()}
+    fun updateNeonBorder(v:Boolean){neonBorderEnabled=v;prefs.edit().putBoolean("neon_border",v).apply()}
+    fun updateSubtitleEnabled(v:Boolean){subtitleEnabled=v;prefs.edit().putBoolean("subtitle_enabled",v).apply()}
+    fun updateSubtitleText(v:String){subtitleText=v;prefs.edit().putString("subtitle_text",v).apply()}
+    fun updateTitleText(v:String){titleText=v;prefs.edit().putString("title_text",v).apply()}
+    fun updateLogoUri(v:String?){logoUri=v;prefs.edit().putString("logo_uri",v).apply()}
+    fun updateTitleSize(v:Int){titleSize=v.coerceIn(20,40);prefs.edit().putInt("title_size",titleSize).apply()}
+    fun updateTitleColorHex(v:String){titleColorHex=v;prefs.edit().putString("title_color",v).apply()}
+    fun updateVoiceSearch(v:Boolean){voiceSearchEnabled=v;prefs.edit().putBoolean("voice_search",v).apply()}
+    fun updateSearchHistory(v:Boolean){searchHistoryEnabled=v;prefs.edit().putBoolean("search_history",v).apply()}
+    fun updateRailEnabled(v:Boolean){railEnabled=v;prefs.edit().putBoolean("rail_enabled",v).apply()}
     fun toggleRailEditMode(){railEditMode=!railEditMode}
     fun setRailSlot(i:Int,s:RailSlot){if(i in railSlots.indices){railSlots=railSlots.toMutableList().also{it[i]=s};saveRailSlots()}}
     fun clearRailSlot(i:Int){setRailSlot(i,RailSlot())}
