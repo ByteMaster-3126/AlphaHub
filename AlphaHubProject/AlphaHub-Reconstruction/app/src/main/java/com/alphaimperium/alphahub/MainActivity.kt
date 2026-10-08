@@ -10,6 +10,8 @@ import android.os.Bundle
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.view.ViewGroup
+import android.view.Gravity
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -166,12 +168,26 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = android.graphics.Color.rgb(2, 5, 13)
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        window.setBackgroundDrawableResource(android.R.color.transparent)
+        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+        window.attributes = window.attributes.apply {
+            dimAmount = 0.42f
+            gravity = Gravity.CENTER
+        }
+        window.decorView.setOnApplyWindowInsetsListener { view, insets ->
+            view.setPadding(0, 0, 0, 0)
+            insets
+        }
         recognitionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!text.isNullOrBlank()) Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
         }
         setContent { AlphaHubTheme { AlphaHubApp(recognitionLauncher) } }
+        window.decorView.post {
+            val dm = resources.displayMetrics
+            window.setLayout((dm.widthPixels * 0.96f).toInt(), (dm.heightPixels * 0.90f).toInt())
+        }
     }
 }
 
