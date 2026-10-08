@@ -1,6 +1,17 @@
 package com.alphaimperium.alphahub
 
 import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.platform.ComposeView
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -163,38 +174,45 @@ private val Magenta = Color(0xFFB339FF)
 private val Muted = Color(0xFF9EB0D3)
 
 class MainActivity : ComponentActivity() {
-    private var recognitionLauncher: androidx.activity.result.ActivityResultLauncher<Intent>? = null
+    private var overlayRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = android.graphics.Color.TRANSPARENT
         window.setBackgroundDrawableResource(android.R.color.transparent)
-        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-        window.attributes = window.attributes.apply {
-            dimAmount = 0.42f
-            gravity = Gravity.CENTER
+        if (!Settings.canDrawOverlays(this)) {
+            requestOverlayPermission()
+        } else {
+            launchFloatingLauncher()
         }
-        window.decorView.setOnApplyWindowInsetsListener { view, insets ->
-            view.setPadding(0, 0, 0, 0)
-            insets
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!overlayRequested && Settings.canDrawOverlays(this)) launchFloatingLauncher()
+    }
+
+    private fun requestOverlayPermission() {
+        overlayRequested = true
+        Toast.makeText(this, "Enable Alpha Hub display-over-other-apps permission", Toast.LENGTH_LONG).show()
+        runCatching {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
-        recognitionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            if (!text.isNullOrBlank()) Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun launchFloatingLauncher() {
+        runCatching {
+            val intent = Intent(this, AlphaHubFloatingService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
         }
-        setContent { AlphaHubTheme { AlphaHubApp(recognitionLauncher) } }
-        window.decorView.post {
-            val dm = resources.displayMetrics
-            window.setLayout((dm.widthPixels * 0.96f).toInt(), (dm.heightPixels * 0.90f).toInt())
-        }
+        finish()
     }
 }
 
 @Composable
 private fun AlphaHubApp(
     recognitionLauncher: androidx.activity.result.ActivityResultLauncher<Intent>?,
-    vm: HubViewModel = viewModel()
+    vm: HubViewModel = viewModel(),
+    floating: Boolean = false
 ) {
     var screen by remember { mutableStateOf(HubScreen.HOME) }
     var search by remember { mutableStateOf("") }
@@ -335,14 +353,14 @@ private fun SearchBar(
 }
 
 @Composable
-private fun HomeScreen(vm:HubViewModel,search:String,onSearch:(String)->Unit,navigate:(HubScreen)->Unit,onVoice:(String)->Unit){
+private fun HomeScreen(vm:HubViewModel,search:String,onSearch:(String)->Unit,navigate:(HubScreen)->Unit,onVoice:(String)->Unit,showRail:Boolean=true){
     var railEditor by remember{mutableStateOf<Int?>(null)}
     var showPhoneSettings by remember{mutableStateOf(false)}
     val apps=vm.apps.filter{it.label.contains(search,true)}
     val webs=vm.websites.filter{it.name.contains(search,true)||it.url.contains(search,true)}
     val settings=vm.availablePhoneSettings.filter{it.name.contains(search,true)}
     Row(Modifier.fillMaxSize()){
-        if(vm.railEnabled) ActionRail(vm,navigate){railEditor=it}
+        if(showRail && vm.railEnabled) ActionRail(vm,navigate){railEditor=it}
         Box(Modifier.fillMaxSize().weight(1f)){
             LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
                 item{SearchBar(search,onSearch,{if(vm.voiceSearchEnabled)onVoice("Search Alpha Hub")},"Universal Search")}
@@ -1045,3 +1063,216 @@ private fun rememberImageBitmap(uriString: String?): ImageBitmap? {
 }
 
 private fun BorderBrush(): Brush = Brush.linearGradient(listOf(Blue, Purple))
+
+
+class AlphaHubFloatingService : Service() {
+    private lateinit var windowManager: WindowManager
+    private lateinit var composeView: ComposeView
+    private lateinit var params: WindowManager.LayoutParams
+    private val vm by lazy { HubViewModel(application) }
+    private var expandedState = androidx.compose.runtime.mutableStateOf(false)
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+        val notification = android.app.Notification.Builder(this, "alpha_hub_launcher")
+            .setContentTitle("Alpha Hub")
+            .setContentText("Floating launcher is active")
+            .setSmallIcon(R.drawable.alpha_logo)
+            .setOngoing(true)
+            .build()
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(1001, notification)
+        }
+
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        val dm = resources.displayMetrics
+        val railWidth = (82 * dm.density).toInt()
+        params = WindowManager.LayoutParams(
+            railWidth,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            if (Build.VERSION.SDK_INT >= 26)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            android.graphics.PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.START or Gravity.TOP
+            x = 0
+            y = 0
+        }
+
+        composeView = ComposeView(this)
+        composeView.setContent {
+            AlphaHubTheme {
+                val expanded = expandedState.value
+                LaunchedEffect(expanded) {
+                    updateWindowWidth(expanded)
+                }
+                FloatingLauncherOverlay(
+                    vm = vm,
+                    expanded = expanded,
+                    onToggle = { expandedState.value = it }
+                )
+            }
+        }
+        windowManager.addView(composeView, params)
+    }
+
+    private fun updateWindowWidth(expanded: Boolean) {
+        if (!::composeView.isInitialized) return
+        val dm = resources.displayMetrics
+        val width = if (expanded) (dm.widthPixels * 0.94f).toInt() else (82 * dm.density).toInt()
+        params.width = width
+        runCatching { windowManager.updateViewLayout(composeView, params) }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    "alpha_hub_launcher",
+                    "Alpha Hub Floating Launcher",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+            )
+        }
+    }
+
+    override fun onDestroy() {
+        if (::composeView.isInitialized) runCatching { windowManager.removeView(composeView) }
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+}
+
+@Composable
+private fun FloatingLauncherOverlay(
+    vm: HubViewModel,
+    expanded: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Box(Modifier.fillMaxSize()) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = fadeIn(tween(320)),
+            exit = fadeOut(tween(280))
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color(0x24000000))
+                    .clickable { onToggle(false) }
+            )
+        }
+
+        Row(
+            Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FloatingRail(vm, expanded, onToggle)
+            AnimatedVisibility(
+                visible = expanded,
+                enter = slideInHorizontally(
+                    initialOffsetX = { -it },
+                    animationSpec = tween(380, easing = FastOutSlowInEasing)
+                ) + fadeIn(tween(380)),
+                exit = slideOutHorizontally(
+                    targetOffsetX = { -it },
+                    animationSpec = tween(300, easing = FastOutSlowInEasing)
+                ) + fadeOut(tween(300))
+            ) {
+                Surface(
+                    Modifier
+                        .fillMaxHeight(0.82f)
+                        .fillMaxWidth()
+                        .padding(start = 6.dp, end = 8.dp),
+                    shape = RoundedCornerShape(26.dp),
+                    color = Color(0xCC101217),
+                    border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color(0xFF4E8CFF), Color(0xFF7D42FF)))),
+                    shadowElevation = 18.dp
+                ) {
+                    AlphaHubAppContent(vm)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlphaHubAppContent(vm: HubViewModel) {
+    var screen by remember { mutableStateOf(HubScreen.HOME) }
+    var search by remember { mutableStateOf("") }
+    Column(Modifier.fillMaxSize()) {
+        HomeHeader(vm, { screen = HubScreen.SETTINGS }, { screen = HubScreen.TOOLS })
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            AnimatedContent(targetState = screen, label = "floating-page") { current ->
+                when (current) {
+                    HubScreen.HOME -> HomeScreen(vm, search, { search = it }, { screen = it }, {}, showRail = false)
+                    HubScreen.TOOLS -> ToolsScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.ADD_TOOL }, { screen = HubScreen.MORE_FEATURES })
+                    HubScreen.APPS -> InstalledAppsScreen(vm, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
+                    HubScreen.SHORTCUTS -> ShortcutsScreen(vm, { screen = HubScreen.CUSTOM_SHORTCUT }, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
+                    HubScreen.INSTALLED_APPS -> InstalledAppsScreen(vm, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.HOME })
+                    HubScreen.ADD_TOOL -> AddToolScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.QUICK_LAUNCH }, { screen = HubScreen.CUSTOM_SHORTCUT })
+                    HubScreen.CUSTOM_SHORTCUT -> CustomShortcutScreen(vm, { screen = HubScreen.SHORTCUTS })
+                    HubScreen.QUICK_LAUNCH -> QuickLaunchScreen(vm, { screen = HubScreen.HOME }, { screen = HubScreen.INSTALLED_APPS }, { screen = HubScreen.CUSTOM_SHORTCUT })
+                    HubScreen.MORE_FEATURES -> MoreFeaturesScreen(vm, { screen = HubScreen.BACKGROUND }, { screen = HubScreen.SETTINGS })
+                    HubScreen.BACKGROUND -> BackgroundScreen(vm, { screen = HubScreen.MORE_FEATURES })
+                    HubScreen.SETTINGS -> SettingsScreen(vm, { screen = HubScreen.HOME })
+                }
+            }
+        }
+        BottomNavigation(screen) { screen = it }
+    }
+}
+
+@Composable
+private fun FloatingRail(vm: HubViewModel, expanded: Boolean, onToggle: (Boolean) -> Unit) {
+    Surface(
+        Modifier
+            .fillMaxHeight(0.72f)
+            .width(74.dp)
+            .clickable { onToggle(!expanded) }
+            .padding(start = 6.dp, end = 2.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = Color(0xD9151A22),
+        border = BorderStroke(1.dp, Color(0xFFB8C7D9)),
+        shadowElevation = 14.dp
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Surface(Modifier.size(48.dp), CircleShape, color = Color(0xCC10315A), border = BorderStroke(1.dp, Cyan)) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Translate, null, tint = Cyan, modifier = Modifier.size(27.dp))
+                }
+            }
+            repeat(5) {
+                Surface(
+                    Modifier.size(48.dp),
+                    RoundedCornerShape(14.dp),
+                    color = Color(0x991B2B43),
+                    border = BorderStroke(1.dp, Color(0xFF254C7C))
+                ) {}
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Edit, null, tint = Color(0xFFD7E5FF), modifier = Modifier.size(28.dp))
+                Text("Edit", color = Color(0xFFD7E5FF), fontSize = 10.sp)
+            }
+            Surface(Modifier.size(48.dp), CircleShape, color = Color(0xCC143256), border = BorderStroke(1.dp, Color(0xFF4774A8))) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(if (expanded) Icons.Default.ArrowBack else Icons.Default.ArrowForward, null, tint = Color.White)
+                }
+            }
+        }
+    }
+}
