@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.provider.Settings
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,12 @@ class AlphaHubFloatingServiceV2 : Service(), LifecycleOwner {
         super.onCreate()
 
         try {
+            if (!Settings.canDrawOverlays(this)) {
+                Log.e(TAG, "Overlay permission is not granted; refusing to start floating launcher")
+                stopSelf()
+                return
+            }
+
             serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
             serviceLifecycle.handleLifecycleEvent(Lifecycle.Event.ON_START)
 
