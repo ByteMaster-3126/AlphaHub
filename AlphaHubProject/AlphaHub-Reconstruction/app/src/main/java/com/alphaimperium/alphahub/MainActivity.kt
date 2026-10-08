@@ -180,20 +180,12 @@ private fun AlphaHubApp(
 ) {
     var screen by remember { mutableStateOf(HubScreen.HOME) }
     var search by remember { mutableStateOf("") }
-
     Box(Modifier.fillMaxSize().background(Bg)) {
         NeoBackground(vm)
         Scaffold(containerColor = Color.Transparent) { padding ->
-            Column(
-                Modifier.fillMaxSize().padding(padding).statusBarsPadding()
-            ) {
+            Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()) {
                 val topLevel = screen in setOf(HubScreen.HOME, HubScreen.TOOLS, HubScreen.APPS, HubScreen.SHORTCUTS)
-                if (screen == HubScreen.HOME) {
-                    HomeHeader(
-                        onSettings = { screen = HubScreen.SETTINGS },
-                        onCrown = { screen = HubScreen.MORE_FEATURES }
-                    )
-                }
+                if (screen == HubScreen.HOME) HomeHeader(vm, { screen = HubScreen.SETTINGS }, { screen = HubScreen.TOOLS })
                 Box(Modifier.fillMaxWidth().weight(1f)) {
                     AnimatedContent(targetState = screen, label = "page") { current ->
                         when (current) {
@@ -216,9 +208,7 @@ private fun AlphaHubApp(
                         }
                     }
                 }
-                if (topLevel) {
-                    BottomNavigation(screen) { screen = it }
-                }
+                if (topLevel) BottomNavigation(screen) { screen = it }
             }
         }
     }
@@ -265,20 +255,24 @@ private fun NeoBackground(vm: HubViewModel) {
 }
 
 @Composable
-private fun HomeHeader(onSettings: () -> Unit, onCrown: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
+private fun HomeHeader(vm: HubViewModel, onSettings: () -> Unit, onCrown: () -> Unit) {
+    Surface(
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        RoundedCornerShape(24.dp),
+        color = if (vm.glassEnabled) Color(0x99071125) else Color.Transparent,
+        border = if (vm.neonBorderEnabled) BorderStroke(1.dp, BorderBrush()) else null
     ) {
-        Image(painterResource(com.alphaimperium.alphahub.R.drawable.alpha_logo), null, Modifier.size(74.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Alpha Hub", fontSize = 27.sp, fontWeight = FontWeight.Bold)
-            Text("Your All-in-One Companion", color = Cyan, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            val customLogo = rememberImageBitmap(vm.logoUri)
+            if (customLogo != null) Image(customLogo, null, Modifier.size(74.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+            else Image(painterResource(com.alphaimperium.alphahub.R.drawable.alpha_logo), null, Modifier.size(74.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(vm.titleText,fontSize=vm.titleSize.sp,fontWeight=FontWeight.Bold,color=runCatching{Color(android.graphics.Color.parseColor("#"+vm.titleColorHex))}.getOrDefault(Cyan),modifier=if(vm.titleGlow)Modifier.graphicsLayer{shadowElevation=10f}else Modifier)
+                if(vm.subtitleEnabled) Text(vm.subtitleText,color=Cyan,fontSize=14.sp,fontWeight=FontWeight.SemiBold)
+            }
+            RoundIcon(Icons.Default.Star,onCrown);Spacer(Modifier.width(8.dp));RoundIcon(Icons.Default.Settings,onSettings)
         }
-        RoundIcon(Icons.Default.Star, onCrown)
-        Spacer(Modifier.width(8.dp))
-        RoundIcon(Icons.Default.Settings, onSettings)
     }
 }
 
@@ -323,94 +317,114 @@ private fun SearchBar(
 }
 
 @Composable
-private fun HomeScreen(
-    vm: HubViewModel,
-    search: String,
-    onSearch: (String) -> Unit,
-    navigate: (HubScreen) -> Unit,
-    onVoice: (String) -> Unit
-) {
-    val filteredApps = vm.apps.filter { it.label.contains(search, true) }
-    val filteredWebs = vm.websites.filter { it.name.contains(search, true) }
-    LazyColumn(
-        Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { SearchBar(search, onSearch, { onVoice("Search Alpha Hub") }) }
-
-        item {
-            SectionCard(
-                title = "INSTALLED APPS (${vm.apps.size})",
-                icon = Icons.Default.GridView,
-                addText = "+ Add",
-                onAdd = { navigate(HubScreen.INSTALLED_APPS) }
-            ) {
-                val apps = (if (search.isBlank()) vm.apps.take(4) else filteredApps.take(4))
-                if (apps.isEmpty()) EmptyInline("No matching installed apps")
-                else AppStrip(apps, vm)
-                if (vm.apps.size > 4) ViewAllButton { navigate(HubScreen.APPS) }
-            }
-        }
-
-        item {
-            SectionCard(
-                title = "RECENT APPS (${vm.recentApps.size})",
-                icon = Icons.Default.History,
-                addText = "+ Add",
-                onAdd = { navigate(HubScreen.INSTALLED_APPS) }
-            ) {
-                if (vm.recentApps.isEmpty()) EmptyInline("Launch an app and it will appear here")
-                else RecentAppsStrip(vm.recentApps, vm)
-            }
-        }
-
-        item {
-            SectionCard(
-                title = "RECENT WEBSITES (${vm.recentWebsites.size})",
-                icon = Icons.Default.Language,
-                addText = "+ Add",
-                onAdd = { navigate(HubScreen.CUSTOM_SHORTCUT) }
-            ) {
-                if (vm.recentWebsites.isEmpty()) EmptyInline("Open a website and it will appear here")
-                else RecentWebStrip(vm.recentWebsites, vm)
-            }
-        }
-
-        item {
-            SectionCard(
-                title = "WEBSITES (${vm.websites.size})",
-                icon = Icons.Default.Web,
-                addText = "+ Add",
-                onAdd = { navigate(HubScreen.CUSTOM_SHORTCUT) }
-            ) {
-                WebsiteStrip(if (search.isBlank()) vm.websites.take(4) else filteredWebs.take(4), vm, showFavorites = true)
-                if (vm.websites.size > 4) ViewAllButton { navigate(HubScreen.SHORTCUTS) }
-            }
-        }
-
-        vm.customSections.forEach { section ->
-            item(key = "section-${section.id}") {
-                SectionCard(
-                    title = section.name,
-                    icon = Icons.Default.Build,
-                    addText = null,
-                    onAdd = { }
-                ) {
-                    if (section.imageUri != null) {
-                        rememberImageBitmap(section.imageUri)?.let { bitmap ->
-                            Image(bitmap, null, Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop)
-                            Spacer(Modifier.height(8.dp))
-                        }
-                    }
-                    val sectionApps = section.appPackages.mapNotNull { p -> vm.apps.firstOrNull { it.packageName == p } }
-                    if (sectionApps.isNotEmpty()) AppStrip(sectionApps, vm)
-                    val sectionWebs = section.websiteIds.mapNotNull { id -> vm.websites.firstOrNull { it.id == id } }
-                    if (sectionWebs.isNotEmpty()) WebsiteStrip(sectionWebs, vm, true)
+private fun HomeScreen(vm:HubViewModel,search:String,onSearch:(String)->Unit,navigate:(HubScreen)->Unit,onVoice:(String)->Unit){
+    var railEditor by remember{mutableStateOf<Int?>(null)}
+    var showPhoneSettings by remember{mutableStateOf(false)}
+    val apps=vm.apps.filter{it.label.contains(search,true)}
+    val webs=vm.websites.filter{it.name.contains(search,true)||it.url.contains(search,true)}
+    val settings=vm.availablePhoneSettings.filter{it.name.contains(search,true)}
+    Row(Modifier.fillMaxSize()){
+        if(vm.railEnabled) ActionRail(vm,navigate){railEditor=it}
+        Box(Modifier.fillMaxSize().weight(1f)){
+            LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(bottom=20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                item{SearchBar(search,onSearch,{if(vm.voiceSearchEnabled)onVoice("Search Alpha Hub")},"Universal Search")}
+                if(search.isNotBlank()){
+                    item{SectionCard("SEARCH RESULTS",Icons.Default.Search,null,{}){
+                        apps.take(8).forEach{SearchResultRow(it.label,"App",Icons.Default.GridView){vm.launchApp(it)}}
+                        webs.take(8).forEach{SearchResultRow(it.name,"Website",Icons.Default.Language){vm.openWeb(it)}}
+                        settings.take(8).forEach{SearchResultRow(it.name,"Phone Setting",Icons.Default.Settings){vm.openPhoneSetting(it.id)}}
+                        val tools=listOf("Screen Translation","Screenshot","QR Scanner","Web Search","Notes")
+                        tools.filter{it.contains(search,true)}.forEach{SearchResultRow(it,"Tool",Icons.Default.Build){navigate(HubScreen.TOOLS)}}
+                        if(apps.isEmpty()&&webs.isEmpty()&&settings.isEmpty()&&tools.none{it.contains(search,true)})EmptyInline("No matching Alpha Hub result")
+                    }}
+                }else{
+                    item{SectionCard("FAVORITE APPS",Icons.Default.Star,"+ Add",{navigate(HubScreen.APPS)}){
+                        val favorites=vm.favoriteApps();if(favorites.isEmpty())EmptyInline("Tap + Add to choose installed apps")else FavoriteAppGrid(favorites.take(8),vm);ViewAllButton{navigate(HubScreen.APPS)}
+                    }}
+                    item{SectionCard("FAVORITE WEBSITES",Icons.Default.Language,"+ Add",{navigate(HubScreen.CUSTOM_SHORTCUT)}){
+                        val favorites=vm.favoriteWebsites().take(4);if(favorites.isEmpty())EmptyInline("Add a website and mark it as a favorite")else WebsiteStrip(favorites,vm,true);ViewAllButton{navigate(HubScreen.SHORTCUTS)}
+                    }}
+                    item{SectionCard("RECENT",Icons.Default.History,"Clear",{vm.clearRecents()}){
+                        val items=vm.recentItems.take(8);if(items.isEmpty())EmptyInline("Apps and websites opened through Alpha Hub appear here")else RecentCombinedGrid(items,vm);if(vm.recentItems.size>8)ViewAllButton{navigate(HubScreen.SHORTCUTS)}
+                    }}
+                    item{SectionCard("PHONE SETTINGS",Icons.Default.Tune,"+ Add",{showPhoneSettings=true}){PhoneSettingsStrip(vm.phoneSettings,vm)}}
+                    vm.customSections.forEach{section->item(key="section-"+section.id){SectionCard(section.name,Icons.Default.Build,null,{}){
+                        section.imageUri?.let{rememberImageBitmap(it)?.let{b->Image(b,null,Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)),contentScale=ContentScale.Crop);Spacer(Modifier.height(8.dp))}}
+                        val sa=section.appPackages.mapNotNull{p->vm.apps.firstOrNull{it.packageName==p}};if(sa.isNotEmpty())AppStrip(sa,vm)
+                        val sw=section.websiteIds.mapNotNull{id->vm.websites.firstOrNull{it.id==id}};if(sw.isNotEmpty())WebsiteStrip(sw,vm,true)
+                    }}}
                 }
             }
         }
     }
+    railEditor?.let{RailEditorDialog(vm,it){railEditor=null}}
+    if(showPhoneSettings)PhoneSettingsPickerDialog(vm){showPhoneSettings=false}
+}
+
+@Composable
+private fun SearchResultRow(title:String,type:String,icon:androidx.compose.ui.graphics.vector.ImageVector,onClick:()->Unit){
+ Surface(Modifier.fillMaxWidth().padding(vertical=3.dp).clickable{onClick()},RoundedCornerShape(14.dp),color=Surface2,border=BorderStroke(1.dp,Color(0xFF1D4F9C))){Row(Modifier.padding(10.dp),verticalAlignment=Alignment.CenterVertically){Icon(icon,null,tint=Cyan,modifier=Modifier.size(28.dp));Spacer(Modifier.width(10.dp));Column(Modifier.weight(1f)){Text(title,fontWeight=FontWeight.SemiBold);Text(type,color=Muted,fontSize=10.sp)}}}
+}
+@Composable
+private fun FavoriteAppGrid(apps:List<AppInfo>,vm:HubViewModel){
+ LazyVerticalGrid(columns=GridCells.Fixed(4),modifier=Modifier.height(if(apps.size>4)174.dp else 94.dp),userScrollEnabled=false,horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){items(apps.take(8)){AppTile(it,vm)}}
+}
+@Composable
+private fun RecentCombinedGrid(items:List<RecentItem>,vm:HubViewModel){
+ LazyVerticalGrid(columns=GridCells.Fixed(4),modifier=Modifier.height(174.dp),userScrollEnabled=false,horizontalArrangement=Arrangement.spacedBy(8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+  items(items.take(8)){item->
+   when(item.type){
+    "app"->vm.apps.firstOrNull{it.packageName==item.key}?.let{AppTile(it,vm)}
+    "web"->vm.websites.firstOrNull{it.id.toString()==item.key}?.let{WebsiteTile(it,vm,false)}
+    else->Surface(Modifier.width(92.dp).clickable{vm.openPhoneSetting(item.key)},RoundedCornerShape(16.dp),color=Surface2,border=BorderStroke(1.dp,Blue)){Column(Modifier.padding(10.dp),horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.Settings,null,tint=Cyan,modifier=Modifier.size(42.dp));Text(item.label.take(12),fontSize=11.sp,maxLines=1)}}
+   }
+  }
+ }
+}
+@Composable
+private fun PhoneSettingsStrip(settings:List<PhoneSettingShortcut>,vm:HubViewModel){
+ Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(10.dp)){settings.forEach{s->Surface(Modifier.width(112.dp).clickable{vm.openPhoneSetting(s.id)},RoundedCornerShape(16.dp),color=Surface2,border=BorderStroke(1.dp,Color(0xFF1D62B4))){Column(Modifier.padding(10.dp),horizontalAlignment=Alignment.CenterHorizontally){Icon(phoneSettingIcon(s.iconKey),null,tint=Cyan,modifier=Modifier.size(38.dp));Spacer(Modifier.height(4.dp));Text(s.name,fontSize=11.sp,maxLines=1)}}}}
+}
+@Composable
+private fun phoneSettingIcon(key:String):androidx.compose.ui.graphics.vector.ImageVector=when(key){
+ "wifi"->Icons.Default.WifiTethering;"bluetooth"->Icons.Default.Bluetooth;"mobile"->Icons.Default.Speed;"location"->Icons.Default.Language;"battery"->Icons.Default.BatteryStd;"display"->Icons.Default.Image;else->Icons.Default.Settings
+}
+@Composable
+private fun ActionRail(vm:HubViewModel,navigate:(HubScreen)->Unit,onEditSlot:(Int)->Unit){
+ Surface(Modifier.width(88.dp).fillMaxHeight().padding(start=8.dp,top=8.dp,bottom=8.dp),RoundedCornerShape(30.dp),color=Color(0xD9040C1B),border=BorderStroke(1.dp,Color.White)){
+  Column(Modifier.fillMaxSize().padding(vertical=12.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(10.dp)){
+   RailAction(Icons.Default.Build,"Tools"){navigate(HubScreen.TOOLS)};RailAction(Icons.Default.Translate,"Screen\ntranslation"){navigate(HubScreen.TOOLS)}
+   vm.railSlots.forEachIndexed{index,slot->RailSlotView(slot,vm,index,onEditSlot)};Spacer(Modifier.weight(1f))
+   RailAction(Icons.Default.Edit,if(vm.railEditMode)"Done" else "Edit"){vm.toggleRailEditMode()};RailAction(Icons.Default.ArrowBack,"Back"){navigate(HubScreen.HOME)}
+  }
+ }
+}
+@Composable
+private fun RailAction(icon:androidx.compose.ui.graphics.vector.ImageVector,label:String,onClick:()->Unit){
+ Column(Modifier.width(72.dp).clip(RoundedCornerShape(18.dp)).clickable{onClick()}.padding(vertical=6.dp),horizontalAlignment=Alignment.CenterHorizontally){Surface(Modifier.size(52.dp),RoundedCornerShape(16.dp),color=Color(0xCC0A2143),border=BorderStroke(1.dp,Blue)){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Icon(icon,null,tint=Cyan,modifier=Modifier.size(28.dp))}};Text(label,color=Color(0xFFD3E1FF),fontSize=10.sp,maxLines=2)}
+}
+@Composable
+private fun RailSlotView(slot:RailSlot,vm:HubViewModel,index:Int,onEditSlot:(Int)->Unit){
+ val label=when(slot.type){"app"->vm.apps.firstOrNull{it.packageName==slot.key}?.label?:"App";"web"->vm.websites.firstOrNull{it.id.toString()==slot.key}?.name?:"Website";"setting"->vm.availablePhoneSettings.firstOrNull{it.id==slot.key}?.name?:"Setting";else->"Slot "+(index+1)}
+ val icon=when(slot.type){"app"->Icons.Default.GridView;"web"->Icons.Default.Language;"setting"->Icons.Default.Settings;else->Icons.Default.Add}
+ Column(Modifier.width(72.dp).clickable{if(vm.railEditMode||slot.type=="empty")onEditSlot(index)else when(slot.type){"app"->vm.launchApp(slot.key);"web"->vm.websites.firstOrNull{it.id.toString()==slot.key}?.let(vm::openWeb);"setting"->vm.openPhoneSetting(slot.key)}}.padding(vertical=3.dp),horizontalAlignment=Alignment.CenterHorizontally){
+  Surface(Modifier.size(52.dp),RoundedCornerShape(16.dp),color=if(slot.type=="empty")Color(0x6610274C)else Color(0xCC0A2143),border=BorderStroke(1.dp,if(slot.type=="empty")Color(0xFF214F8D)else Cyan)){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Icon(icon,null,tint=if(slot.type=="empty")Muted else Cyan,modifier=Modifier.size(26.dp))}};Text(label.take(10),color=Muted,fontSize=9.sp,maxLines=1)
+ }
+}
+@Composable
+private fun RailEditorDialog(vm:HubViewModel,index:Int,onDismiss:()->Unit){
+ AlertDialog(onDismissRequest=onDismiss,title={Text("Customize Rail Slot "+(index+1))},text={LazyColumn(Modifier.height(420.dp)){
+  item{TextButton(onClick={vm.clearRailSlot(index);onDismiss()}){Text("Empty slot")}};item{Text("Apps",color=Cyan,fontWeight=FontWeight.Bold)}
+  items(vm.apps.take(10)){a->TextButton(onClick={vm.setRailSlot(index,RailSlot("app",a.packageName));onDismiss()},modifier=Modifier.fillMaxWidth()){Text(a.label,modifier=Modifier.fillMaxWidth())}}
+  item{Text("Websites",color=Cyan,fontWeight=FontWeight.Bold)}
+  items(vm.websites.take(10)){w->TextButton(onClick={vm.setRailSlot(index,RailSlot("web",w.id.toString()));onDismiss()},modifier=Modifier.fillMaxWidth()){Text(w.name,modifier=Modifier.fillMaxWidth())}}
+  item{Text("Phone Settings",color=Cyan,fontWeight=FontWeight.Bold)}
+  items(vm.availablePhoneSettings.take(10)){s->TextButton(onClick={vm.setRailSlot(index,RailSlot("setting",s.id));onDismiss()},modifier=Modifier.fillMaxWidth()){Text(s.name,modifier=Modifier.fillMaxWidth())}}
+ }},confirmButton={TextButton(onClick=onDismiss){Text("Done")}})
+}
+@Composable
+private fun PhoneSettingsPickerDialog(vm:HubViewModel,onDismiss:()->Unit){
+ AlertDialog(onDismissRequest=onDismiss,title={Text("Phone Settings on Home")},text={LazyColumn(Modifier.height(420.dp)){items(vm.availablePhoneSettings){s->val selected=vm.phoneSettings.any{it.id==s.id};Row(Modifier.fillMaxWidth().clickable{if(selected)vm.removePhoneSetting(s.id)else vm.addPhoneSetting(s.id)}.padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically){Icon(phoneSettingIcon(s.iconKey),null,tint=Cyan);Spacer(Modifier.width(10.dp));Text(s.name,Modifier.weight(1f));Text(if(selected)"Added" else "Add",color=if(selected)Cyan else Muted,fontSize=12.sp)}}}},confirmButton={TextButton(onClick=onDismiss){Text("Done")}})
 }
 
 @Composable
